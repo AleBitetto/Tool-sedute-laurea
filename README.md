@@ -3,7 +3,7 @@
 ### Installation
 
 Clone the repository with
-`git clone [https://github.com/AleBitetto/Scraping_from_Orbis.git](https://github.com/AleBitetto/Tool-sedute-laurea.git)`
+`git clone https://github.com/AleBitetto/Tool-sedute-laurea.git`
 
 From console navigate the cloned folder and create a new environment with:
 ```
