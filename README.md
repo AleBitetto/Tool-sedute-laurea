@@ -31,3 +31,7 @@ Codice_Fiscale = "codice fiscale"
 Password = "password login esse3"
 ```
 where you need to write the esse3 credentials (Fiscal Code and password). Then simply rename the file as `.py`
+
+### Usage
+
+Simply run the notebook `Download lista studenti and upload voti.ipynb` [here](https://github.com/AleBitetto/Tool-sedute-laurea/blob/master/Download%20lista%20studenti%20and%20upload%20voti.ipynb).
