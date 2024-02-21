@@ -371,7 +371,6 @@ def get_studenti(driver, link_list, MAPPING_CORSO):
 
 def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA_YEAR):
 
-
     df_check=pd.read_excel(os.path.join('Query', QUERY_TRIENNALI))
     df_check['MATRICOLA']=df_check['MATRICOLA'].astype(str)
     df_studenti=df_studenti.merge(df_check[['NOME', 'COGNOME', 'MATRICOLA', 'PUNTI_TOTALI', 'AA_IMM_SU']], left_on='Matricola', right_on='MATRICOLA', how='left')
@@ -397,7 +396,7 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
     main_name='Seduta Laurea '+'_'.join(GRADUATION_DATE[0].split('/')[::-1])+','+','.join([x[:2] for x in GRADUATION_DATE[1:]])
     df_studenti.to_csv(os.path.join('Sedute', main_name+'_studenti.csv'), index=False, sep=';')
     print('\nStudenti list saved in', os.path.join('Sedute', main_name+'_studenti.csv'))
-    
+
     # create template
     file_name=os.path.join('Sedute', main_name+'.xlsx')
     month_num=int(GRADUATION_DATE[0].split('/')[1])
@@ -459,11 +458,12 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
             df['Punti tesi (da 0 a 5 punti immatricolati DAL 17/18)']=np.where(df_studenti_corso['AA_IMM_SU'] > 2017, 5, 0)
             df['Punti tempestività (laurea entro 3 anni solari da anno 1^ immatricolazione 2 punti)']=np.where(df_studenti_corso['Tempestività'] == 'Yes', 2, 0)
             df['Totale']=df.sum(numeric_only = True, axis=1)
-            df['Lode automatica (totale >= 112)']=np.where(df['Totale'] >= 112, 'Sì', 'No')
-        #     df['Lode su richiesta relatore (totale=111)']=np.where(df['Totale'] == 111, 'Sì', 'No')
+            df['Lode automatica (totale >= 112)']=''#np.where(df['Totale'] >= 112, 'Sì', 'No')
+            df['Lode su richiesta relatore (totale=111)']=''#np.where(df['Totale'] == 111, 'Sì', 'No')
             df['Voto di Laurea']=''
             df=df.replace(0, None)
             df.to_excel(writer, sheet_name=sheet_name, startcol=1, startrow=start_row+5, header=True, index=False, na_rep='')
+            # format header
             for j, col in enumerate(df.columns):
                 frm1 = workbook.add_format({'bold': True, 'italic': True, 'text_wrap' : True, 'align': 'top', 'font_name': 'Book Antiqua', 'font_size': 12})
                 frm1.set_font_color('#c76408')
@@ -472,11 +472,18 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
                 frm1.set_border()
                 worksheet.write(start_row+5, j+1, col, frm1)
             worksheet.set_row(start_row+5, 90)
-            cell_format = workbook.add_format()
-            cell_format.set_border()
+            # add cell border
+            border_format = workbook.add_format()
+            border_format.set_border()
             for col_num, col in enumerate(df.columns.values):
                 for row_num, value in enumerate(df[col].values):
-                    worksheet.write(start_row+5+row_num+1, 1 + col_num, value, cell_format)
+                    worksheet.write(start_row+5+row_num+1, 1 + col_num, value, border_format)
+            # add formula for Totale and Lode     https://xlsxwriter.readthedocs.io/working_with_formulas.html
+            for ind in range(len(df)):
+                row_num=str(start_row+5+ind+2)
+                worksheet.write_formula('J'+row_num, '=SUM(E'+row_num+':I'+row_num+')', border_format)            
+                worksheet.write_formula('K'+row_num, '=IF(J'+row_num+'>=112,"sì","no")', border_format)     # USE comma not semicolon
+                worksheet.write_formula('M'+row_num, '=IF(OR(K'+row_num+'="sì",L'+row_num+'="sì"),"110 e lode",J'+row_num+')', border_format)
             start_row+=len(df)+11
             df_t=df[['Relatore']].rename(columns={'Relatore': 'Docente'})
             df_t['Ruolo']='Relatore'
@@ -485,6 +492,7 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
     writer.close()
     df_email=df_email.drop_duplicates().sort_values(by=['Ruolo', 'Docente'])
     df_email.to_csv(os.path.join('Sedute', main_name+'_email.csv'), index=False, sep=';')
-    
+
     print('\nFile saved in', file_name)
     print('\nEmail list saved in', os.path.join('Sedute', main_name+'_email.csv'))
+
