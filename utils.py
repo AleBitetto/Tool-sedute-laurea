@@ -211,7 +211,7 @@ def get_seduta(CHROMEDRIVER_PATH, GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNAL
     return driver, link_list
 
 
-def get_studenti(driver, link_list, MAPPING_CORSO):
+def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
 
     df_studenti=pd.DataFrame()
     for link_seduta in link_list:
@@ -250,7 +250,7 @@ def get_studenti(driver, link_list, MAPPING_CORSO):
         print(f'\n\n########################### {data_ora}  ({luogo}) ###########################')
         print(f'\n- Found {len(comm_list)} in commissione: ')
         display(df_commissione)
-        file_name='.\\Sedute\\Seduta Laurea '+'_'.join(data_ora.split(' ore ')[0].split('/')[::-1] + [data_ora.split(' ore ')[1].replace(':', '.')])+'_commissione.csv'
+        file_name='.\\Sedute\\Log\\Seduta Laurea '+'_'.join(data_ora.split(' ore ')[0].split('/')[::-1] + [data_ora.split(' ore ')[1].replace(':', '.')])+'_commissione.csv'
         df_commissione.to_csv(file_name, index=False, sep=';')
         print('\nFile saved in', file_name)
 
@@ -364,38 +364,44 @@ def get_studenti(driver, link_list, MAPPING_CORSO):
     display(df_studenti.head(5))
     display(df_studenti.groupby(['Data', 'Corso_lab']).size().to_frame())
     
-    joblib.dump(df_studenti, 'df_studenti.pkl', compress=('lzma', 3))
+    file_name_pkl=os.path.join('Checkpoints', 'Seduta Laurea '+'_'.join(GRADUATION_DATE[0].split('/')[::-1])+','+','.join([x[:2] for x in GRADUATION_DATE[1:]])+' - df_studenti.pkl')
+    joblib.dump(df_studenti, file_name_pkl, compress=('lzma', 3))
+    print('\nLog studenti saved in', file_name_pkl)
+                               
     
     return df_studenti
 
 
-def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA_YEAR):
+def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA_YEAR, final_version):
+
+    main_name='Seduta Laurea '+'_'.join(GRADUATION_DATE[0].split('/')[::-1])+','+','.join([x[:2] for x in GRADUATION_DATE[1:]])
 
     df_check=pd.read_excel(os.path.join('Query', QUERY_TRIENNALI))
     df_check['MATRICOLA']=df_check['MATRICOLA'].astype(str)
     df_studenti=df_studenti.merge(df_check[['NOME', 'COGNOME', 'MATRICOLA', 'PUNTI_TOTALI', 'AA_IMM_SU']], left_on='Matricola', right_on='MATRICOLA', how='left')
-    if df_studenti.isna().sum().sum() > 0:
-        print('#### NAs in df_studenti')
-        raise
 
-    # check voto proposto
-    df_studenti['check voto']=df_studenti['Voto proposto']==round(df_studenti['PUNTI_TOTALI'])
-    cc=df_studenti[df_studenti['check voto'] == False]
-    if len(cc) > 0:
-        print(f'#### found {len(cc)} rows with mismatch in Voto Proposto')
-        display(cc)
-    # check anno immatricolazione
-    df_studenti['check anno iscrizione']=df_studenti['Anno iscrizione'].apply(lambda x: int(x.split('\n')[0].split(' ')[1][:4]))==df_studenti['AA_IMM_SU']
-    cc=df_studenti[df_studenti['check anno iscrizione'] == False]
-    if len(cc) > 0:
-        print(f'#### found {len(cc)} rows with mismatch in Anno iscrizione')
-        display(cc)
-    # add tempestività
-    df_studenti['Tempestività']=np.where(df_studenti['AA_IMM_SU'] >= int(TEMPESTIVITA_YEAR[:4]), 'Yes', 'No')
-    display(df_studenti.groupby('Tempestività').size().to_frame())
-    main_name='Seduta Laurea '+'_'.join(GRADUATION_DATE[0].split('/')[::-1])+','+','.join([x[:2] for x in GRADUATION_DATE[1:]])
-    df_studenti.to_csv(os.path.join('Sedute', main_name+'_studenti.csv'), index=False, sep=';')
-    print('\nStudenti list saved in', os.path.join('Sedute', main_name+'_studenti.csv'))
+    if not final_version:    
+        if df_studenti.isna().sum().sum() > 0:
+            print('#### NAs in df_studenti')
+            raise
+
+        # check voto proposto
+        df_studenti['check voto']=df_studenti['Voto proposto']==round(df_studenti['PUNTI_TOTALI'])
+        cc=df_studenti[df_studenti['check voto'] == False]
+        if len(cc) > 0:
+            print(f'#### found {len(cc)} rows with mismatch in Voto Proposto')
+            display(cc)
+        # check anno immatricolazione
+        df_studenti['check anno iscrizione']=df_studenti['Anno iscrizione'].apply(lambda x: int(x.split('\n')[0].split(' ')[1][:4]))==df_studenti['AA_IMM_SU']
+        cc=df_studenti[df_studenti['check anno iscrizione'] == False]
+        if len(cc) > 0:
+            print(f'#### found {len(cc)} rows with mismatch in Anno iscrizione')
+            display(cc)
+        # add tempestività
+        df_studenti['Tempestività']=np.where(df_studenti['AA_IMM_SU'] >= int(TEMPESTIVITA_YEAR[:4]), 'Yes', 'No')
+        display(df_studenti.groupby('Tempestività').size().to_frame())
+        df_studenti.to_csv(os.path.join('Sedute', 'Log', main_name+'_studenti.csv'), index=False, sep=';')
+        print('\nStudenti list saved in', os.path.join('Sedute', 'Log', main_name+'_studenti.csv'))
 
     # create template
     file_name=os.path.join('Sedute', main_name+'.xlsx')
@@ -404,9 +410,10 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
     year=GRADUATION_DATE[0].split('/')[2]
 
     df_email=pd.DataFrame()
-    writer = pd.ExcelWriter(file_name, engine='xlsxwriter')
+    if not final_version:
+        writer=pd.ExcelWriter(file_name, engine='xlsxwriter')
     for sed in df_studenti['Data'].unique():
-        df_studenti_sed=df_studenti[df_studenti['Data']==sed].copy()
+        df_studenti_sed=df_studenti.copy()[df_studenti['Data']==sed]
 
         date_full=datetime.strptime(sed.split(' ore')[0], '%d/%m/%Y')
         day_week=calendar.day_name[date_full.weekday()]
@@ -417,8 +424,12 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
         segr=df_commissione[df_commissione['Ruolo']=='Segretario']['Docente'].values[0]
         df_email=pd.concat([df_email, pd.DataFrame({'Docente': [pres, procl, segr], 'Ruolo': ['Presidente', 'Proclamatore', 'Segretario']})])
 
-        pd.DataFrame().to_excel(writer, sheet_name=sheet_name, startcol=1, startrow=18, header=True, index=False)  # initialize empty sheet
+        if final_version:
+            file_name_final=os.path.join('Sedute', main_name+' '+procl.split(' ')[0]+'.xlsx')
+            writer=pd.ExcelWriter(file_name_final, engine='xlsxwriter')
+            df_read=pd.read_excel(os.path.join('Sedute', main_name+'.xlsx'), sheet_name=sheet_name)
 
+        pd.DataFrame().to_excel(writer, sheet_name=sheet_name, startcol=1, startrow=1, header=True, index=False)  # initialize empty sheet
         workbook  = writer.book
         worksheet = writer.sheets[sheet_name]
         worksheet.write(1, 0, 'DIPARTIMENTO DI SCIENZE ECONOMICHE E AZIENDALI',
@@ -431,38 +442,58 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
                        workbook.add_format({'bold': True, 'color': '#476ce6', 'font_size': 14, 'font_name': 'Arial'}))
         worksheet.write(9, 0, 'Proclamatore '+procl,
                        workbook.add_format({'bold': True, 'color': '#476ce6', 'font_size': 14, 'font_name': 'Arial'}))
-        worksheet.write(9, 6, day_week.upper().replace('Ì', "I'")+' '+str(date_full.day)+' - '+df_studenti_sed['Luogo'].iloc[0].upper() ,
+        worksheet.write(9, 4 if final_version else 6, day_week.upper().replace('Ì', "I'")+' '+str(date_full.day)+' - '+df_studenti_sed['Luogo'].iloc[0].upper() ,
                        workbook.add_format({'bold': True, 'color': '#bd1136', 'font_size': 14, 'font_name': 'Arial'}))
 
         worksheet.set_column('B:D', 30)
         worksheet.set_column('E:E', 11)
-        worksheet.set_column('F:I', 20)
-        worksheet.set_column('J:J', 10)
-        worksheet.set_column('K:L', 13)
-        worksheet.set_column('M:M', 12)
+        if not final_version:
+            worksheet.set_column('F:I', 20)
+            worksheet.set_column('J:J', 10)
+            worksheet.set_column('K:L', 13)
+            worksheet.set_column('M:M', 12)
 
         start_row=11
         for sed_corso in df_studenti_sed['Corso_lab'].unique():
-            df_studenti_corso=df_studenti_sed[df_studenti_sed['Corso_lab']==sed_corso].copy()
+            df_studenti_corso=df_studenti_sed.copy()[df_studenti_sed['Corso_lab']==sed_corso]
             worksheet.write(start_row, 0, sed_corso,
                            workbook.add_format({'bold': True, 'color': '#082ca1', 'font_size': 14, 'font_name': 'Arial'}))
-            worksheet.write(start_row, 6, 'PROCLAMAZIONE ORE '+sed.split('ore ')[1],
+            worksheet.write(start_row, 4 if final_version else 6, 'PROCLAMAZIONE ORE '+sed.split('ore ')[1],
                            workbook.add_format({'bold': True, 'color': 'red', 'font_size': 14, 'font_name': 'Arial'}))
             worksheet.write(start_row+2, 0, 'Numero candidati: '+str(len(df_studenti_corso)),
                            workbook.add_format({'bold': True, 'color': '#092273', 'font_size': 14, 'font_name': 'Arial'}))
 
             df=df_studenti_corso[['NOME', 'COGNOME', 'Relatore']].copy().rename(columns={'NOME': 'Nome', 'COGNOME': 'Cognome'})
-            df['Punteggio iniziale']=df_studenti_corso['Voto proposto']
-            df['Punti per attività automatico (3 punti PRIMA del 17/18)']=np.where(df_studenti_corso['AA_IMM_SU'] <= 2017, 3, 0)
-            df['Punti tesi (da 0 a 2 punti PRIMA del 17/18)']=np.where(df_studenti_corso['AA_IMM_SU'] <= 2017, 2, 0)
-            df['Punti tesi (da 0 a 5 punti immatricolati DAL 17/18)']=np.where(df_studenti_corso['AA_IMM_SU'] > 2017, 5, 0)
-            df['Punti tempestività (laurea entro 3 anni solari da anno 1^ immatricolazione 2 punti)']=np.where(df_studenti_corso['Tempestività'] == 'Yes', 2, 0)
-            df['Totale']=df.sum(numeric_only = True, axis=1)
-            df['Lode automatica (totale >= 112)']=''#np.where(df['Totale'] >= 112, 'Sì', 'No')
-            df['Lode su richiesta relatore (totale=111)']=''#np.where(df['Totale'] == 111, 'Sì', 'No')
-            df['Voto di Laurea']=''
-            df=df.replace(0, None)
+            if not final_version:
+                df['Punteggio iniziale']=df_studenti_corso['Voto proposto']
+                df['Punti per attività automatico (3 punti PRIMA del 17/18)']=np.where(df_studenti_corso['AA_IMM_SU'] <= 2017, 3, 0)
+                df['Punti tesi (da 0 a 2 punti PRIMA del 17/18)']=np.where(df_studenti_corso['AA_IMM_SU'] <= 2017, 2, 0)
+                df['Punti tesi (da 0 a 5 punti immatricolati DAL 17/18)']=np.where(df_studenti_corso['AA_IMM_SU'] > 2017, 5, 0)
+                df['Punti tempestività (laurea entro 3 anni solari da anno 1^ immatricolazione 2 punti)']=np.where(df_studenti_corso['Tempestività'] == 'Yes', 2, 0)
+                df['Totale']=df.sum(numeric_only = True, axis=1)
+                df['Lode automatica (totale >= 112)']=''#np.where(df['Totale'] >= 112, 'Sì', 'No')
+                df['Lode su richiesta relatore (totale=111)']=''#np.where(df['Totale'] == 111, 'Sì', 'No')
+                df['Voto di Laurea']=''
+                df=df.replace(0, None)
+            else:
+                df['Voto di Laurea']=''
+                df=df.reset_index(drop=True)
+                # find columns
+                for i, _ in enumerate(df_read.columns):
+                    if 'Voto di Laurea' in df_read.iloc[:, i].values:
+                        voto_col=i
+                    if 'Nome' in df_read.iloc[:, i].values:
+                        nome_col=i
+                    if 'Cognome' in df_read.iloc[:, i].values:
+                        cognome_col=i
+                # get voto finale
+                for i, row in df.iterrows():
+                    i_loc=np.where((df_read.iloc[:, nome_col].values == row['Nome']) & (df_read.iloc[:, cognome_col].values == row['Cognome']))[0][0]
+                    voto=df_read.iloc[i_loc, voto_col]
+                    df.iloc[i]['Voto di Laurea']=str(voto)
+
             df.to_excel(writer, sheet_name=sheet_name, startcol=1, startrow=start_row+5, header=True, index=False, na_rep='')
+    #             df_log=pc.concat([df_log, pd.DataFrame({'sed': sed, 'start_row': start_row+5})])
             # format header
             for j, col in enumerate(df.columns):
                 frm1 = workbook.add_format({'bold': True, 'italic': True, 'text_wrap' : True, 'align': 'top', 'font_name': 'Book Antiqua', 'font_size': 12})
@@ -471,7 +502,10 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
                     frm1.set_bg_color('#faef91')
                 frm1.set_border()
                 worksheet.write(start_row+5, j+1, col, frm1)
-            worksheet.set_row(start_row+5, 90)
+            if not final_version:
+                worksheet.set_row(start_row+5, 90)
+            else:
+                worksheet.set_row(start_row+5, 40)
             # add cell border
             border_format = workbook.add_format()
             border_format.set_border()
@@ -479,20 +513,24 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
                 for row_num, value in enumerate(df[col].values):
                     worksheet.write(start_row+5+row_num+1, 1 + col_num, value, border_format)
             # add formula for Totale and Lode     https://xlsxwriter.readthedocs.io/working_with_formulas.html
-            for ind in range(len(df)):
-                row_num=str(start_row+5+ind+2)
-                worksheet.write_formula('J'+row_num, '=SUM(E'+row_num+':I'+row_num+')', border_format)            
-                worksheet.write_formula('K'+row_num, '=IF(J'+row_num+'>=112,"sì","no")', border_format)     # USE comma not semicolon
-                worksheet.write_formula('M'+row_num, '=IF(OR(K'+row_num+'="sì",L'+row_num+'="sì"),"110 e lode",J'+row_num+')', border_format)
+            if not final_version:
+                for ind in range(len(df)):
+                    row_num=str(start_row+5+ind+2)
+                    worksheet.write_formula('J'+row_num, '=SUM(E'+row_num+':I'+row_num+')', border_format)            
+                    worksheet.write_formula('K'+row_num, '=IF(J'+row_num+'>=112,"sì","no")', border_format)     # USE comma not semicolon
+                    worksheet.write_formula('M'+row_num, '=IF(OR(K'+row_num+'="sì",L'+row_num+'="sì"),"110 e lode",J'+row_num+')', border_format)
             start_row+=len(df)+11
             df_t=df[['Relatore']].rename(columns={'Relatore': 'Docente'})
             df_t['Ruolo']='Relatore'
             df_email=pd.concat([df_email, df_t])
+        if final_version:
+            writer.close()
+            print('File saved in', file_name_final)
 
-    writer.close()
-    df_email=df_email.drop_duplicates().sort_values(by=['Ruolo', 'Docente'])
-    df_email.to_csv(os.path.join('Sedute', main_name+'_email.csv'), index=False, sep=';')
-
-    print('\nFile saved in', file_name)
-    print('\nEmail list saved in', os.path.join('Sedute', main_name+'_email.csv'))
+    if not final_version:
+        writer.close()
+        df_email=df_email.drop_duplicates().sort_values(by=['Ruolo', 'Docente'])
+        df_email.to_csv(os.path.join('Sedute', main_name+'_email.csv'), index=False, sep=';')
+        print('\nFile saved in', file_name)
+        print('\nEmail list saved in', os.path.join('Sedute', main_name+'_email.csv'))
 
