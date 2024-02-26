@@ -251,6 +251,7 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
         print(f'\n- Found {len(comm_list)} in commissione: ')
         display(df_commissione)
         file_name='.\\Sedute\\Log\\Seduta Laurea '+'_'.join(data_ora.split(' ore ')[0].split('/')[::-1] + [data_ora.split(' ore ')[1].replace(':', '.')])+'_commissione.csv'
+        df_commissione['Presente']=''
         df_commissione.to_csv(file_name, index=False, sep=';')
         print('\nFile saved in', file_name)
 
@@ -527,10 +528,262 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
             writer.close()
             print('File saved in', file_name_final)
 
-    if not final_version:
+    if final_version:
+        print('\n\n- Available sessions:\n')
+        print('\n'.join(sorted(df_studenti['Data'].unique())))
+    else:
         writer.close()
         df_email=df_email.drop_duplicates().sort_values(by=['Ruolo', 'Docente'])
         df_email.to_csv(os.path.join('Sedute', main_name+'_email.csv'), index=False, sep=';')
         print('\nFile saved in', file_name)
         print('\nEmail list saved in', os.path.join('Sedute', main_name+'_email.csv'))
 
+
+def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
+
+    wait=WebDriverWait(driver, 10)
+    driver.switch_to.window(driver.window_handles[0])
+
+    for i, row in df_studenti_sed.iterrows():
+
+        print(f"  -Uploading student {i+1}/{len(df_studenti_sed)}", end = "\r")
+
+        link=ROOT_URL+row['link']
+        driver.execute_script(f"window.open('{link}')")
+        new_tab= driver.window_handles[i+1]
+        driver.switch_to.window(new_tab)
+
+        # input punti tesi
+        try:
+            punti_tesi=wait.until(
+                            EC.presence_of_element_located((By.ID, 'grad-dettLau-puntiTesi')))
+            punti_tesi.click()
+            punti_tesi.clear()
+            punti_tesi.send_keys(row['Punti tesi'])
+            wait.until(EC.presence_of_element_located((By.ID, 'grad-dettLau-annotazioni'))).click()
+        except:
+            print(f'\n## Error for punti tesi {row["Nome"]} ({i+1})')
+
+        # tick Lode and Encomio
+        if row['Lode'] != '':
+            try:
+                lode=wait.until(
+                        EC.presence_of_element_located((By.ID, 'grad-dettLau-lode1')))
+                lode.click()
+            except:
+                print(f'\n## Error for Lode {row["Nome"]} ({i+1})')
+        if row['Encomio'] != '':
+            try:
+                encomio=wait.until(
+                        EC.presence_of_element_located((By.ID, 'grad-dettLau-encomio1')))
+                encomio.click()
+            except:
+                print(f'\n## Error for Encomio {row["Nome"]} ({i+1})')
+
+        # tick Commissione
+        try:
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            names_list=df_commissione_presenze_sed['Docente'].values
+
+            # check if multiple pages in Commissione checkbox - and check presenti
+            ss=BeautifulSoup(driver.page_source, 'html.parser').prettify()
+            ind=ss.find('Visualizzati')
+            s1=ss[ind:(ind+40)].split('\n')[0]
+            tot_elem=s1.split(' di ')[1]
+            stop=False
+            tot_checked=0
+            while True:
+                # find names and check
+                table_checkbox=driver.find_elements(By.CSS_SELECTOR, "table[id^='gradDettLauCommissione'] td:nth-of-type(2)")
+                for i, item in enumerate(table_checkbox):
+                    tt=convert(BeautifulSoup(item.get_attribute('outerHTML'), 'html.parser'))
+                    for name_present in names_list:
+                        if name_present in tt['td'][0]['#text']:
+                            prev_sibl=item.find_element(By.XPATH, "preceding-sibling::*[1]")
+                            t1=convert(BeautifulSoup(prev_sibl.get_attribute('outerHTML'), 'html.parser'))
+                            if t1['td'][0]['@class'] == ['td_cbox']:
+                                prev_sibl.click()
+                                tot_checked+=1
+                            else:
+                                print(f'Missing checkbox for {name_present} for {row["NOME"]} {row["COGNOME"]}')
+                # check next page
+                ss=BeautifulSoup(driver.page_source, 'html.parser').prettify()
+                ind=ss.find('Visualizzati')
+                s1=ss[ind:(ind+40)].split('\n')[0]
+                current_range_max=s1.replace('Visualizzati ', '').replace(' di '+tot_elem, '').split(' - ')[1]
+                if current_range_max == tot_elem:    # no more pages
+                    break
+                else:
+                    button_path='/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/form/div[3]/div/div[5]/div/table/tbody/tr/td[2]/table/tbody/tr/td[6]'
+                    if driver.find_elements(By.XPATH, button_path):
+                        driver.find_element(By.XPATH, button_path).click()
+                        time.sleep(1)
+
+            if len(names_list) != tot_checked:
+                print(f'\n## Error for checkbox Commissione {row["Nome"]} ({i+1})')
+        except:
+            print(f'\n## Error for checkbox Commissione {row["Nome"]} ({i+1})')
+
+        # save
+        try:
+            save=wait.until(
+                        EC.presence_of_element_located((By.ID, 'grad-dettLau-btnSubmit')))
+            save.click()
+        except:
+            print(f'\n## Error for Save {row["Nome"]} ({i+1})')
+
+        # save and exit
+        try:
+            save_exit=wait.until(
+                        EC.presence_of_element_located((By.ID, 'grad-dettLau-btnSubmitExit')))
+            save_exit.click()
+        except:
+            print(f'\n## Error for Save and Exit {row["Nome"]} ({i+1})')
+
+    return driver
+
+
+def check_voti(driver, df_studenti_sed):
+
+    wait=WebDriverWait(driver, 10)
+    driver.switch_to.window(driver.window_handles[-1])
+    driver.refresh()
+    time.sleep(3)
+
+    if "footable-page-link" not in driver.page_source:     # single page
+        final_grade=wait.until(
+                EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")))
+        final_grade=convert(BeautifulSoup(final_grade.get_attribute('outerHTML'), 'html.parser'))
+        elem_list=final_grade['table'][0]['tbody'][0]['tr']
+    else:                                                  # multiple pages
+        expected_rows = int(driver.find_element(By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]/tfoot/tr/td/div/span").get_attribute("textContent").split(' di ')[-1])
+        num_pages = int(driver.find_element(By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]/tfoot/tr/td/div/span").get_attribute("textContent").split(',')[0].split('di')[-1])
+
+        print(f'\n- Found {num_pages} pages')
+
+        elem_list=[]
+        for i in range(num_pages):
+
+            time.sleep(1)
+    #         final_grade=wait.until(
+    #             EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")))
+            final_grade=driver.find_element(By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")
+            final_grade=convert(BeautifulSoup(final_grade.get_attribute('outerHTML'), 'html.parser'))
+            elem_list.extend(final_grade['table'][0]['tbody'][0]['tr'])
+
+            if i < (num_pages-1):
+                driver.find_element(By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]/tfoot/tr/td/div/ul/li[5]/a").click()
+                time.sleep(2)
+
+        print(f'- Found {len(elem_list)} students')
+        if len(elem_list) != expected_rows:
+            print(f'\n\n\n## Error for lista studenti. Trovati {len(elem_list)}, attesi {expected_rows}')
+
+    for i, el in enumerate(elem_list):
+        grade=el['td'][8]['#text']
+        lode = True if 'L' in grade else False
+        grade_evaluated=int(grade.replace('L', ''))
+        matricola=int(el['td'][1]['#text'])
+        name=el['td'][0]['#text']
+        grade_expected=min(df_studenti_sed[df_studenti_sed['Matricola'] == matricola]['Punteggio finale'].values[0], 110)
+        lode_expected = True if df_studenti_sed[df_studenti_sed['Matricola'] == matricola]['Lode'].values[0] != '' else False
+        if grade_evaluated != grade_expected or lode != lode_expected:
+            print(f'\n## Expected Votazione Finale mismatch: {name} ({i+1})')
+
+    print('\nVotazione Finale: Check Done')
+    
+    
+def upload_voti(CHROMEDRIVER_PATH, GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, config, upload_single_session=[]):
+
+    main_name='Seduta Laurea '+'_'.join(GRADUATION_DATE[0].split('/')[::-1])+','+','.join([x[:2] for x in GRADUATION_DATE[1:]])
+    df_studenti=pd.read_csv(os.path.join('Sedute', 'Log', main_name+'_studenti.csv'), sep=';')
+
+    if len(upload_single_session) > 0:
+        df_studenti=df_studenti[df_studenti['Data'].isin(upload_single_session)]
+
+    # read presenze commissione
+    df_commissione_presenze=pd.DataFrame()
+    for path_commissione in df_studenti['file_commissione'].unique():
+        df_comm_sed=pd.read_csv(path_commissione, sep=';').fillna('')
+        sed=df_studenti[df_studenti['file_commissione'] == path_commissione]['Data'].values[0]
+        if sum(df_comm_sed['Presente'] != '') == 0:
+            print('Nobody present at seduta: ', sed)
+            raise
+        df_comm_sed=df_comm_sed[df_comm_sed['Presente'] != '']
+        print(f'Presence at {sed}: {len(df_comm_sed)}')
+        display(df_comm_sed)
+        df_comm_sed['Data']=sed
+        df_commissione_presenze=pd.concat([df_commissione_presenze, df_comm_sed])
+
+    # read and match final votes
+    df_t=pd.DataFrame()
+    df_t['NOME']=''
+    df_t['COGNOME']=''
+    df_t['Punteggio iniziale']=0
+    df_t['Punteggio finale']=0
+    df_t['Punti tesi']=0
+    df_t['Lode']=''
+    for sh in pd.ExcelFile(os.path.join('Sedute', main_name+'.xlsx')).sheet_names:
+        df_read=pd.read_excel(os.path.join('Sedute', main_name+'.xlsx'), sheet_name=sh)
+        for i, _ in enumerate(df_read.columns):
+            if 'Voto di Laurea' in df_read.iloc[:, i].values:
+                voto_col=i
+            if 'Nome' in df_read.iloc[:, i].values:
+                nome_col=i
+            if 'Cognome' in df_read.iloc[:, i].values:
+                cognome_col=i
+            if 'Punteggio iniziale' in df_read.iloc[:, i].values:
+                iniziale_col=i
+            if 'Totale' in df_read.iloc[:, i].values:
+                finale_col=i
+        for i, row in df_studenti.iterrows():
+            i_loc=np.where((df_read.iloc[:, nome_col].values == row['NOME']) & (df_read.iloc[:, cognome_col].values == row['COGNOME']))
+            if len(i_loc[0]) > 0:
+                punteggio_iniziale=df_read.iloc[i_loc[0][0], iniziale_col]
+                punteggio_finale=df_read.iloc[i_loc[0][0], finale_col]
+                punti_tesi=punteggio_finale-punteggio_iniziale
+                voto_finale=df_read.iloc[i_loc[0][0], voto_col]
+
+                if "lode" in str(voto_finale):
+                    voto=110
+                    lode='sì'
+                else:
+                    voto=int(voto_finale)
+                    lode=''
+
+                add_row=pd.DataFrame({'NOME': row['NOME'],
+                                      'COGNOME': row['COGNOME'],
+                                      'Punteggio iniziale': punteggio_iniziale,
+                                      'Punti tesi': punti_tesi,
+                                      'Lode': lode,
+                                      'Encomio': '',
+                                      'Punteggio finale': punteggio_finale}, index=[0])
+                df_t=pd.concat([df_t, add_row])
+    col_drop=[x for x in df_studenti.columns if x in df_t.columns and x not in ['NOME', 'COGNOME']]
+    if len(col_drop) > 0:
+        df_studenti=df_studenti.drop(columns=col_drop)
+    df_studenti=df_studenti.merge(df_t, on=['NOME', 'COGNOME'], how='left')
+    if df_studenti[df_t.columns].isna().sum().sum() > 0:
+        print('\n## Error for df_studenti when matching the final votes')
+        raise
+
+
+    # fill voti
+    driver_dict={}
+    avail_sed=df_studenti['Data'].unique().tolist()
+    for sed in avail_sed:
+
+        print('\n\n#####################################')
+        print('\nFilling voti for: ', sed, '\n')
+        df_studenti_sed=df_studenti[df_studenti['Data'] == sed].copy()
+        df_commissione_presenze_sed=df_commissione_presenze[df_commissione_presenze['Data'] == row['Data']]
+
+        # set up page
+        driver_dict[sed], _ = get_seduta(CHROMEDRIVER_PATH, GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, config)
+
+        # fill final grade
+        driver_dict[sed] = fill_voti(driver_dict[sed], df_studenti_sed, df_commissione_presenze_sed, ROOT_URL)
+
+        # check final grade mismatch
+        check_voti(driver_dict[sed], df_studenti_sed)
+    
