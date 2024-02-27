@@ -19,6 +19,7 @@ import requests
 from bs4 import BeautifulSoup
 from soup2dict import convert
 from datetime import datetime
+from urllib.parse import urljoin
 import re
 import time
 import joblib
@@ -533,7 +534,10 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
         print('\n'.join(sorted(df_studenti['Data'].unique())))
     else:
         writer.close()
+        df_email_list=pd.concat([pd.read_csv(os.path.join('Checkpoints', 'lista_email_docenti.csv'), sep=';'),
+                                 pd.read_csv(os.path.join('Checkpoints', 'lista_email_docenti_aggiuntivi_MANUAL.csv'), sep=';')])
         df_email=df_email.drop_duplicates().sort_values(by=['Ruolo', 'Docente'])
+        df_email=df_email.merge(df_email_list[['Docente', 'Email']], on='Docente', how='left')
         df_email.to_csv(os.path.join('Sedute', main_name+'_email.csv'), index=False, sep=';')
         print('\nFile saved in', file_name)
         print('\nEmail list saved in', os.path.join('Sedute', main_name+'_email.csv'))
@@ -786,4 +790,36 @@ def upload_voti(CHROMEDRIVER_PATH, GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNA
 
         # check final grade mismatch
         check_voti(driver_dict[sed], df_studenti_sed)
+
+
+def get_emails(ROOT_URL):
     
+    # parse html
+    file = open("lista_docenti.txt", "r")
+    html = '\n'.join(file.readlines())
+    file.close()
+    tt=convert(BeautifulSoup(html, 'html.parser'))
+
+    df_email=pd.DataFrame()
+    elem_list=tt['html'][0]['body'][0]['div'][1]['div'][0]['div'][1]['div'][0]['div'][0]['div'][0]['div'][0]['div'][0]['div'][0]['div'][1]['div']
+    for i, el in enumerate(elem_list):
+
+        print(f"Downloading email {i+1}/{len(elem_list)}", end = "\r")
+
+        name=el['#text']
+        # get email
+        url=urljoin(ROOT_URL, el['div'][0]['a'][0]['@href'])
+        page=requests.get(url)
+        soup=convert(BeautifulSoup(page.content, 'html.parser'))
+        email=soup['html'][0]['body'][0]['div'][1]['div'][0]['div'][2]['div'][0]['div'][0]['div'][0]['ul'][0]['li'][1]['#text']
+        add_row=pd.DataFrame({'Docente': name.split(',')[0].strip().upper(),
+                              'Ruolo': ', '.join([x.strip() for x in name.split(',')[1:]]),
+                              'Email': email,
+                             'url': url}, index=[i])
+        df_email=pd.concat([df_email, add_row])
+    
+    df_email.to_csv(os.path.join('Checkpoints', 'lista_email_docenti.csv'), index=False, sep=';')
+    print('\n- File saved in', os.path.join('Checkpoints', 'lista_email_docenti.csv'))
+    display(df_email.head(5))
+    
+    return df_email
