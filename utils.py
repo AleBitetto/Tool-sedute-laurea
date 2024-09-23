@@ -24,12 +24,21 @@ import re
 import time
 import joblib
 import calendar
+from termcolor import colored
+import config
 
 
 
 def get_chromedriver(chromedriver_path=None):
     
-    driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()))
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument("--lang=it")
+    
+    chrome_install = ChromeDriverManager().install()
+    folder = os.path.dirname(chrome_install)
+    chromedriver_path = os.path.join(folder, "chromedriver.exe")
+    driver = webdriver.Chrome(service=ChromeService(chromedriver_path),
+                             options=chrome_options)
     
     return driver
 
@@ -116,78 +125,92 @@ def get_chromedriver(chromedriver_path=None):
         
 #         return driver
 
+
+def login_and_profilo(driver, login_as='DOCENTE'):
+
+    wait=WebDriverWait(driver, 10)
     
-def get_seduta(CHROMEDRIVER_PATH, GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, config):
+    # enter credentials
+    try:
+        cf=wait.until(
+            EC.presence_of_element_located((By.ID, "username")))
+#             EC.presence_of_element_located((By.XPATH, "/html/body/div/div[2]/div[2]/div[1]/div/div/div[2]/form/div[1]/input")))
+        cf.send_keys(config.Codice_Fiscale)
+        pwd=wait.until(
+            EC.presence_of_element_located((By.ID, "password")))
+#             EC.presence_of_element_located((By.XPATH, "/html/body/div/div[2]/div[2]/div[1]/div/div/div[2]/form/div[2]/input")))
+        pwd.send_keys(config.Password)
+        time.sleep(1)
+        driver.execute_script(f"window.scrollTo(0, {600});")
+        time.sleep(1)
+        login=wait.until(            
+            EC.presence_of_element_located((By.XPATH, "//button[text()='Accedi']")))
+#             EC.presence_of_element_located((By.XPATH, "//*[@id='auth-internal']/div/div/div[2]/form/div[3]/button")))
+        login.click()
+    except:
+        print(colored('\n## Error for credentials', 'black', 'on_yellow'))
+        raise
+    # close cookies
+    time.sleep(3)
+    try:
+        cookie=wait.until(            
+            EC.presence_of_element_located((By.XPATH, "//button[text()='Accetta tutti']")))
+#             EC.presence_of_element_located((By.XPATH, '/html/body/div[4]/div/div[1]/div/div[2]/button[2]')))
+        cookie.click()
+    except:
+        print(colored('\n## Error for cookies', 'black', 'on_yellow'))
+    # select Docente
+    try:
+        time.sleep(2)
+        docente=wait.until(
+            EC.presence_of_element_located((By.XPATH, f"//a[contains(text(),'Accedi come {login_as}')]")))
+        docente.click()
+    except:
+        print(colored('\n## Error for Docente', 'black', 'on_yellow'))
+        
+        
+def get_seduta(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI):
     
     if len(GRADUATION_DATE) == 1:
         GRADUATION_DATE=GRADUATION_DATE[0]    # when TRIENNALI=False
 
-    driver=get_chromedriver(chromedriver_path=CHROMEDRIVER_PATH)
+    driver=get_chromedriver()
     driver.get(ESSE3_URL)
     driver.maximize_window()
     time.sleep(2)
 
     wait=WebDriverWait(driver, 10)
 
-    # close cookies
-    try:
-        cookie=wait.until(
-            EC.presence_of_element_located((By.XPATH, '/html/body/div[4]/div/div[1]/div/div[2]/button[2]')))
-        cookie.click()
-    except:
-        print('\n## Error for cookies')
-        raise
-    # login button
-    try:
-        login=wait.until(
-            EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[2]/div[2]/a[4]")))
-        login.click()
-    except:
-        print('\n## Error for login button')
-        raise
-    # enter credentials
-    try:
-        cf=wait.until(
-            EC.presence_of_element_located((By.XPATH, "/html/body/div/div[2]/div[2]/div[1]/div/div/div[2]/form/div[1]/input")))
-        cf.send_keys(config.Codice_Fiscale)
-        pwd=wait.until(
-            EC.presence_of_element_located((By.XPATH, "/html/body/div/div[2]/div[2]/div[1]/div/div/div[2]/form/div[2]/input")))
-        pwd.send_keys(config.Password)
-        time.sleep(1)
-        driver.execute_script(f"window.scrollTo(0, {600});")
-        time.sleep(1)
-        login=wait.until(
-            EC.presence_of_element_located((By.XPATH, "//*[@id='auth-internal']/div/div/div[2]/form/div[3]/button")))
-        login.click()
-    except:
-        print('\n## Error for credentials')
-        raise
-    # select Docente
-    try:
-        time.sleep(2)
-        docente=wait.until(
-            EC.presence_of_element_located((By.XPATH, "//a[contains(text(),'Accedi come DOCENTE')]")))
-        docente.click()
-    except:
-        print('\n## Error for Docente')
-        raise
+#     # login button
+#     try:
+#         login=wait.until(
+#             EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[2]/div[2]/a[4]")))
+#         login.click()
+#     except:
+#         print('\n## Error for login button')
+#         raise
+    # login, cookies and profilo Docente
+    login_and_profilo(driver, login_as='DOCENTE')
     # open seduta
     try:
         menu=wait.until(
-            EC.presence_of_element_located((By.XPATH, "/html/body/header/div/div/a[2]")))
+            EC.presence_of_element_located((By.ID, "hamburger")))
+#             EC.presence_of_element_located((By.XPATH, "/html/body/header/div/div/a[2]")))
         menu.click()
         time.sleep(1)
         commissioni=wait.until(
-                EC.presence_of_element_located((By.XPATH, "/html/body/header/div/nav/div/div[2]/ul/li[4]")))
+            EC.presence_of_element_located((By.ID, "menu_link-navbox_docenti_Commissioni")))        
+#             EC.presence_of_element_located((By.XPATH, "/html/body/header/div/nav/div/div[2]/ul/li[4]")))
         commissioni.click()
         time.sleep(1)
         titolo=wait.until(
-                EC.presence_of_element_located((By.XPATH, "/html/body/header/div/nav/div/div[2]/ul/li[4]/ul/li[1]")))
+            EC.presence_of_element_located((By.XPATH, "//a[contains(text(),'Conseguimento titolo')]")))
+#             EC.presence_of_element_located((By.XPATH, "/html/body/header/div/nav/div/div[2]/ul/li[4]/ul/li[1]")))
         titolo.click()
         time.sleep(1)
-    #     seduta=wait.until(
-    #             EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table/tbody/tr/td[4]/a/img")))
-    #     seduta.click()
+#         seduta=wait.until(
+#                 EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table/tbody/tr/td[4]/a/img")))
+#         seduta.click()
         seduta=wait.until(
                         EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table")))
         seduta=convert(BeautifulSoup(seduta.get_attribute('outerHTML'), 'html.parser'))
@@ -206,7 +229,7 @@ def get_seduta(CHROMEDRIVER_PATH, GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNAL
     #                         driver.get(ROOT_URL + link)
 
     except:
-        print('\n## Error for seduta')
+        print(colored('\n## Error for seduta', 'black', 'on_yellow'))
         raise
         
     return driver, link_list
@@ -214,30 +237,41 @@ def get_seduta(CHROMEDRIVER_PATH, GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNAL
 
 def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
 
+    all_drivers = []
     df_studenti=pd.DataFrame()
     for link_seduta in link_list:
 
-        driver.execute_script(f"window.open('{link_seduta}')")
-        driver.switch_to.window(driver.window_handles[-1])
+        # open new window
+        driver = get_chromedriver()            
+        driver.maximize_window()
+        driver.get(link_seduta)
+        login_and_profilo(driver, login_as='DOCENTE')
+        driver.get(link_seduta)
+#             driver.execute_script(f"window.open('{link_seduta}')")
+#             driver.switch_to.window(driver.window_handles[-1])
+        all_drivers.append(driver)    # so to keep all drivers open
+        
         wait=WebDriverWait(driver, 10)
 
         # get info seduta
         try:
             time.sleep(1)
             info_seduta=wait.until(
-                    EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/div[1]")))
+                EC.presence_of_element_located((By.ID, "seduta")))
+#                     EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/div[1]")))
             info_seduta=convert(BeautifulSoup(info_seduta.get_attribute('outerHTML'), 'html.parser'))
             data_ora=info_seduta['div'][0]['dl'][0]['dd'][0]['navigablestring'][0].encode('ascii', 'replace').decode().replace('?','')
             luogo=info_seduta['div'][0]['dl'][0]['dd'][1]['navigablestring'][0].encode('ascii', 'replace').decode().replace('?','')
         except:
-            print('\n## Error for info seduta')
+            print(colored('\n## Error for info seduta', 'black', 'on_yellow'))
             raise
             
         # get commissione
         try:
             time.sleep(1)
             commissione=wait.until(
-                    EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[1]")))
+                EC.presence_of_element_located((By.ID, "commissione")))
+#                     EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[1]")))
             commissione=convert(BeautifulSoup(commissione.get_attribute('outerHTML'), 'html.parser'))
             comm_list=commissione['table'][0]['tbody'][0]['tr']
             df_commissione=pd.DataFrame()
@@ -245,7 +279,7 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
                 df_commissione=pd.concat([df_commissione,
                                           pd.DataFrame({'Docente': com['td'][0]['#text'], 'Ruolo': com['td'][1]['#text']}, index=[i+1])])
         except:
-            print('\n## Error for commissione')
+            print(colored('\n## Error for commissione', 'black', 'on_yellow'))
             raise
             
         print(f'\n\n########################### {data_ora}  ({luogo}) ###########################')
@@ -262,12 +296,13 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
             #     driver.execute_script(f"window.scrollTo(0, {600});")   # scroll down to let the table appear
                 time.sleep(1)
                 studenti=wait.until(
-                        EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")))
+                    EC.presence_of_element_located((By.ID, "elencoLaureandi")))
+#                         EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")))
                 studenti=convert(BeautifulSoup(studenti.get_attribute('outerHTML'), 'html.parser'))
                 stud_list=studenti['table'][0]['tbody'][0]['tr']
                 print(f'\n- Found {len(stud_list)} students')
             except:
-                print('\n\n\n## Error for lista studenti pagina singola')
+                print(colored('\n\n\n## Error for lista studenti pagina singola', 'black', 'on_yellow'))
                 raise
         else:                                                  # multiple pages
             try:
@@ -281,19 +316,21 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
 
                     time.sleep(1)
                     studenti=wait.until(
-                            EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")))
+                        EC.presence_of_element_located((By.ID, "elencoLaureandi")))
+#                             EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")))
                     studenti=convert(BeautifulSoup(studenti.get_attribute('outerHTML'), 'html.parser'))
                     stud_list.extend(studenti['table'][0]['tbody'][0]['tr'])
 
                     if i < (num_pages-1):
-                        driver.find_element(By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]/tfoot/tr/td/div/ul/li[5]/a").click()
+                        time.sleep(1)
+                        driver.find_element(By.CSS_SELECTOR, 'li[data-page="next"] a').click()    # next page
                         time.sleep(2)
 
                 print(f'\n- Found {len(stud_list)} students')
                 if len(stud_list) != expected_rows:
-                    print(f'\n\n\n## Error for lista studenti. Trovati {len(stud_list)}, attesi {expected_rows}')
+                    print(colored(f'\n\n\n## Error for lista studenti. Trovati {len(stud_list)}, attesi {expected_rows}', 'black', 'on_yellow'))
             except:
-                print('\n\n\n## Error for lista studenti pagine multiple')
+                print(colored('\n\n\n## Error for lista studenti pagine multiple', 'black', 'on_yellow'))
                 raise
 
         df_studenti_t=pd.DataFrame()
@@ -310,7 +347,8 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
 
             # get anno iscrizione
             iscrizione=wait.until(
-                        EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[1]")))
+                EC.presence_of_element_located((By.ID, "grad-dettLau-iscrizioni")))
+#                         EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[1]")))
             iscrizione=convert(BeautifulSoup(iscrizione.get_attribute('outerHTML'), 'html.parser'))
             anno_iscrizione=[]
             for el in iscrizione['table'][0]['tbody'][0]['tr']:
@@ -318,7 +356,8 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
 
             # get punti tesi
             media=wait.until(
-                        EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/div[3]")))
+                EC.presence_of_element_located((By.ID, "grad-dettLau-tesi")))
+#                         EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/div[3]")))
             media=convert(BeautifulSoup(media.get_attribute('outerHTML'), 'html.parser'))
             crediti=media['div'][0]['dl'][0]['dd'][3]['#text'].replace('\xa0', '').replace('\u200b', '')
             crediti_tesi=media['div'][0]['dl'][0]['dd'][4]['#text'].replace('\xa0', '').replace('\u200b', '')
@@ -326,7 +365,8 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
 
             # get voto proposto
             voto=wait.until(
-                        EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/div[4]")))
+                EC.presence_of_element_located((By.ID, "grad-dettLau-boxVerbalizzazione")))
+#                         EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/div[4]")))
             voto=convert(BeautifulSoup(voto.get_attribute('outerHTML'), 'html.parser'))
             df_voto=pd.DataFrame(index=[i])
             for ind, el in enumerate(voto['div'][0]['dl'][0]['dt']):
@@ -357,48 +397,59 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
             df_studenti_t['Voto Finale']=0
             move_col = df_studenti_t.pop('link')
             df_studenti_t.insert(df_studenti_t.shape[1], 'link', move_col)
+            time.sleep(0.5)
         df_studenti_t.insert(0, 'Luogo', luogo)
         df_studenti_t.insert(0, 'Data', data_ora)
         df_studenti_t['link_seduta']=link_seduta
         df_studenti_t['file_commissione']=file_name
         df_studenti=pd.concat([df_studenti, df_studenti_t])
     df_studenti=df_studenti.merge(MAPPING_CORSO, on='Corso', how='left')
+    print(f'\n\nTotal students: {len(df_studenti)}')
     display(df_studenti.head(5))
     display(df_studenti.groupby(['Data', 'Corso_lab']).size().to_frame())
-    
+   
     file_name_pkl=os.path.join('Checkpoints', 'Seduta Laurea '+'_'.join(GRADUATION_DATE[0].split('/')[::-1])+','+','.join([x[:2] for x in GRADUATION_DATE[1:]])+' - df_studenti.pkl')
     joblib.dump(df_studenti, file_name_pkl, compress=('lzma', 3))
     print('\nLog studenti saved in', file_name_pkl)
                                
     
-    return df_studenti
+    return df_studenti, all_drivers
 
 
 def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA_YEAR, final_version):
 
+    QUERY_REQUIRED_COLUMNS = ['NOME', 'COGNOME', 'MATRICOLA', 'PUNTI_TOTALI', 'AA_IMM_SU']
+    
     main_name='Seduta Laurea '+'_'.join(GRADUATION_DATE[0].split('/')[::-1])+','+','.join([x[:2] for x in GRADUATION_DATE[1:]])
 
     df_check=pd.read_excel(os.path.join('Query', QUERY_TRIENNALI))
+    if not all([x in df_check.columns for x in QUERY_REQUIRED_COLUMNS]):
+        print(colored(f'\n## Missing columns in "{QUERY_TRIENNALI}":', 'black', 'on_yellow'),
+             '\n   -', '\n   - '.join([x for x in QUERY_REQUIRED_COLUMNS if x not in df_check.columns]))
+        raise
     df_check['MATRICOLA']=df_check['MATRICOLA'].astype(str)
     df_studenti=df_studenti.merge(df_check[['NOME', 'COGNOME', 'MATRICOLA', 'PUNTI_TOTALI', 'AA_IMM_SU']], left_on='Matricola', right_on='MATRICOLA', how='left')
 
     if not final_version:    
         if df_studenti.isna().sum().sum() > 0:
-            print('#### NAs in df_studenti')
+            print(colored('#### NAs in df_studenti', 'black', 'on_yellow'))
             raise
 
         # check voto proposto
-        df_studenti['check voto']=df_studenti['Voto proposto']==round(df_studenti['PUNTI_TOTALI'])
+        df_studenti['check voto']=df_studenti['Voto proposto']==df_studenti['PUNTI_TOTALI'].apply(lambda x: min(round(x), 110))
         cc=df_studenti[df_studenti['check voto'] == False]
         if len(cc) > 0:
-            print(f'#### found {len(cc)} rows with mismatch in Voto Proposto')
+            print(colored(f'#### found {len(cc)} rows with mismatch between "PUNTI_TOTALI" and "Voto Proposto"', 'black', 'on_yellow'))
             display(cc)
         # check anno immatricolazione
         df_studenti['check anno iscrizione']=df_studenti['Anno iscrizione'].apply(lambda x: int(x.split('\n')[0].split(' ')[1][:4]))==df_studenti['AA_IMM_SU']
         cc=df_studenti[df_studenti['check anno iscrizione'] == False]
         if len(cc) > 0:
-            print(f'#### found {len(cc)} rows with mismatch in Anno iscrizione')
-            display(cc)
+            print(colored(f'#### found {len(cc)} rows with mismatch between "AA_IMM_SU" and "Anno iscrizione"', 'black', 'on_yellow'))
+            for count, row in cc.reset_index(drop=True).iterrows():
+                print(count+1, '-', row['Nome'],' (Matricola', row['Matricola']+') - Corso:',row['Corso'])
+                print('   AA_IMM_SU:', row['AA_IMM_SU'])
+                print('   Da esse3:', '\n      '+row['Anno iscrizione'].replace('\n', '\n      '), end='\n\n')
         # add tempestività
         df_studenti['Tempestività']=np.where(df_studenti['AA_IMM_SU'] >= int(TEMPESTIVITA_YEAR[:4]), 'Yes', 'No')
         display(df_studenti.groupby('Tempestività').size().to_frame())
@@ -566,7 +617,7 @@ def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
             punti_tesi.send_keys(row['Punti tesi'])
             wait.until(EC.presence_of_element_located((By.ID, 'grad-dettLau-annotazioni'))).click()
         except:
-            print(f'\n## Error for punti tesi {row["Nome"]} ({i+1})')
+            print(colored(f'\n## Error for punti tesi {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
 
         # tick Lode and Encomio
         if row['Lode'] != '':
@@ -575,14 +626,14 @@ def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
                         EC.presence_of_element_located((By.ID, 'grad-dettLau-lode1')))
                 lode.click()
             except:
-                print(f'\n## Error for Lode {row["Nome"]} ({i+1})')
+                print(colored(f'\n## Error for Lode {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
         if row['Encomio'] != '':
             try:
                 encomio=wait.until(
                         EC.presence_of_element_located((By.ID, 'grad-dettLau-encomio1')))
                 encomio.click()
             except:
-                print(f'\n## Error for Encomio {row["Nome"]} ({i+1})')
+                print(colored(f'\n## Error for Encomio {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
 
         # tick Commissione
         try:
@@ -624,9 +675,9 @@ def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
                         time.sleep(1)
 
             if len(names_list) != tot_checked:
-                print(f'\n## Error for checkbox Commissione {row["Nome"]} ({i+1})')
+                print(colored(f'\n## Error for checkbox Commissione {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
         except:
-            print(f'\n## Error for checkbox Commissione {row["Nome"]} ({i+1})')
+            print(colored(f'\n## Error for checkbox Commissione {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
 
         # save
         try:
@@ -634,7 +685,7 @@ def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
                         EC.presence_of_element_located((By.ID, 'grad-dettLau-btnSubmit')))
             save.click()
         except:
-            print(f'\n## Error for Save {row["Nome"]} ({i+1})')
+            print(colored(f'\n## Error for Save {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
 
         # save and exit
         try:
@@ -642,7 +693,7 @@ def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
                         EC.presence_of_element_located((By.ID, 'grad-dettLau-btnSubmitExit')))
             save_exit.click()
         except:
-            print(f'\n## Error for Save and Exit {row["Nome"]} ({i+1})')
+            print(colored(f'\n## Error for Save and Exit {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
 
     return driver
 
@@ -681,7 +732,7 @@ def check_voti(driver, df_studenti_sed):
 
         print(f'- Found {len(elem_list)} students')
         if len(elem_list) != expected_rows:
-            print(f'\n\n\n## Error for lista studenti. Trovati {len(elem_list)}, attesi {expected_rows}')
+            print(colored(f'\n\n\n## Error for lista studenti. Trovati {len(elem_list)}, attesi {expected_rows}', 'black', 'on_yellow'))
 
     for i, el in enumerate(elem_list):
         grade=el['td'][8]['#text']
@@ -697,7 +748,7 @@ def check_voti(driver, df_studenti_sed):
     print('\nVotazione Finale: Check Done')
     
     
-def upload_voti(CHROMEDRIVER_PATH, GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, config, upload_single_session=[]):
+def upload_voti(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, upload_single_session=[]):
 
     main_name='Seduta Laurea '+'_'.join(GRADUATION_DATE[0].split('/')[::-1])+','+','.join([x[:2] for x in GRADUATION_DATE[1:]])
     df_studenti=pd.read_csv(os.path.join('Sedute', 'Log', main_name+'_studenti.csv'), sep=';')
@@ -768,7 +819,7 @@ def upload_voti(CHROMEDRIVER_PATH, GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNA
         df_studenti=df_studenti.drop(columns=col_drop)
     df_studenti=df_studenti.merge(df_t, on=['NOME', 'COGNOME'], how='left')
     if df_studenti[df_t.columns].isna().sum().sum() > 0:
-        print('\n## Error for df_studenti when matching the final votes')
+        print(colored('\n## Error for df_studenti when matching the final votes', 'black', 'on_yellow'))
         raise
 
 
@@ -783,7 +834,7 @@ def upload_voti(CHROMEDRIVER_PATH, GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNA
         df_commissione_presenze_sed=df_commissione_presenze[df_commissione_presenze['Data'] == row['Data']]
 
         # set up page
-        driver_dict[sed], _ = get_seduta(CHROMEDRIVER_PATH, GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, config)
+        driver_dict[sed], _ = get_seduta(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI)
 
         # fill final grade
         driver_dict[sed] = fill_voti(driver_dict[sed], df_studenti_sed, df_commissione_presenze_sed, ROOT_URL)

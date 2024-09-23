@@ -77,7 +77,7 @@ dependencies:
     - nbconvert==7.6.0
     - nbformat==5.9.0
     - nest-asyncio==1.5.6
-    - notebook==6.5.4
+    - notebook==6.5.5
     - notebook-shim==0.2.3
     - openpyxl==3.1.2
     - outcome==1.2.0
