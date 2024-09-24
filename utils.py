@@ -212,7 +212,7 @@ def get_seduta(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI):
 #                 EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table/tbody/tr/td[4]/a/img")))
 #         seduta.click()
         seduta=wait.until(
-                        EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table")))
+                        EC.presence_of_element_located((By.ID, "seduteAperte")))  
         seduta=convert(BeautifulSoup(seduta.get_attribute('outerHTML'), 'html.parser'))
         link_list=[]
         if TRIENNALI == False:
@@ -445,13 +445,20 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
         df_studenti['check anno iscrizione']=df_studenti['Anno iscrizione'].apply(lambda x: int(x.split('\n')[0].split(' ')[1][:4]))==df_studenti['AA_IMM_SU']
         cc=df_studenti[df_studenti['check anno iscrizione'] == False]
         if len(cc) > 0:
-            print(colored(f'#### found {len(cc)} rows with mismatch between "AA_IMM_SU" and "Anno iscrizione"', 'black', 'on_yellow'))
+            print(colored(f'#### found {len(cc)} rows with mismatch between "AA_IMM_SU" and "Anno iscrizione"', 'black', 'on_yellow'),
+                 '   ->  Keeping information from Esse3')
             for count, row in cc.reset_index(drop=True).iterrows():
                 print(count+1, '-', row['Nome'],' (Matricola', row['Matricola']+') - Corso:',row['Corso'])
                 print('   AA_IMM_SU:', row['AA_IMM_SU'])
                 print('   Da esse3:', '\n      '+row['Anno iscrizione'].replace('\n', '\n      '), end='\n\n')
+        df_studenti['AA_IMM_SU_ESSE3']=df_studenti['Anno iscrizione'].apply(lambda x: int(x.split('\n')[0].split(' ')[1][:4]))
+        check_range = [2000, 2030]
+        if df_studenti['AA_IMM_SU_ESSE3'].unique().max() > check_range[1] or df_studenti['AA_IMM_SU_ESSE3'].unique().min() < check_range[0]:
+            print(colored(f'#### Check "AA_IMM:SU_ESSE33", values outside range {check_range[0]}-{check_range[1]}', 'black', 'on_yellow'))
+            display(df_studenti[(df_studenti['AA_IMM_SU_ESSE3'] < check_range[0]) | (df_studenti['AA_IMM_SU_ESSE3'] > check_range[1])]['AA_IMM_SU_ESSE3'].value_counts().to_frame())
+            raise        
         # add tempestività
-        df_studenti['Tempestività']=np.where(df_studenti['AA_IMM_SU'] >= int(TEMPESTIVITA_YEAR[:4]), 'Yes', 'No')
+        df_studenti['Tempestività']=np.where(df_studenti['AA_IMM_SU_ESSE3'] >= int(TEMPESTIVITA_YEAR[:4]), 'Yes', 'No')
         display(df_studenti.groupby('Tempestività').size().to_frame())
         df_studenti.to_csv(os.path.join('Sedute', 'Log', main_name+'_studenti.csv'), index=False, sep=';')
         print('\nStudenti list saved in', os.path.join('Sedute', 'Log', main_name+'_studenti.csv'))
@@ -519,9 +526,9 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
             df=df_studenti_corso[['NOME', 'COGNOME', 'Relatore']].copy().rename(columns={'NOME': 'Nome', 'COGNOME': 'Cognome'})
             if not final_version:
                 df['Punteggio iniziale']=df_studenti_corso['Voto proposto']
-                df['Punti per attività automatico (3 punti PRIMA del 17/18)']=np.where(df_studenti_corso['AA_IMM_SU'] <= 2017, 3, 0)
-                df['Punti tesi (da 0 a 2 punti PRIMA del 17/18)']=np.where(df_studenti_corso['AA_IMM_SU'] <= 2017, 2, 0)
-                df['Punti tesi (da 0 a 5 punti immatricolati DAL 17/18)']=np.where(df_studenti_corso['AA_IMM_SU'] > 2017, 5, 0)
+                df['Punti per attività automatico (3 punti PRIMA del 17/18)']=np.where(df_studenti_corso['AA_IMM_SU_ESSE3'] <= 2017, 3, 0)
+                df['Punti tesi (da 0 a 2 punti PRIMA del 17/18)']=np.where(df_studenti_corso['AA_IMM_SU_ESSE3'] <= 2017, 2, 0)
+                df['Punti tesi (da 0 a 5 punti immatricolati DAL 17/18)']=np.where(df_studenti_corso['AA_IMM_SU_ESSE3'] > 2017, 5, 0)
                 df['Punti tempestività (laurea entro 3 anni solari da anno 1^ immatricolazione 2 punti)']=np.where(df_studenti_corso['Tempestività'] == 'Yes', 2, 0)
                 df['Totale']=df.sum(numeric_only = True, axis=1)
                 df['Lode automatica (totale >= 112)']=''#np.where(df['Totale'] >= 112, 'Sì', 'No')
@@ -562,14 +569,24 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
             # add cell border
             border_format = workbook.add_format()
             border_format.set_border()
+            border_yellow_format = workbook.add_format({'bg_color': 'yellow', 'border': 1})
             for col_num, col in enumerate(df.columns.values):
                 for row_num, value in enumerate(df[col].values):
-                    worksheet.write(start_row+5+row_num+1, 1 + col_num, value, border_format)
+                    # add highlight for Totale = 111
+                    if col == 'Totale':
+                        if value == 111:
+                            worksheet.write(start_row+5+row_num+1, 1 + col_num, value, border_yellow_format)
+                    else:    
+                        worksheet.write(start_row+5+row_num+1, 1 + col_num, value, border_format)
             # add formula for Totale and Lode     https://xlsxwriter.readthedocs.io/working_with_formulas.html
+            row_111 = np.where(df['Totale'] == 111)[0].tolist()
             if not final_version:
                 for ind in range(len(df)):
                     row_num=str(start_row+5+ind+2)
-                    worksheet.write_formula('J'+row_num, '=SUM(E'+row_num+':I'+row_num+')', border_format)            
+                    if ind in row_111:
+                        worksheet.write_formula('J'+row_num, '=SUM(E'+row_num+':I'+row_num+')', border_yellow_format)
+                    else:
+                        worksheet.write_formula('J'+row_num, '=SUM(E'+row_num+':I'+row_num+')', border_format)
                     worksheet.write_formula('K'+row_num, '=IF(J'+row_num+'>=112,"sì","no")', border_format)     # USE comma not semicolon
                     worksheet.write_formula('M'+row_num, '=IF(OR(K'+row_num+'="sì",L'+row_num+'="sì"),"110 e lode",J'+row_num+')', border_format)
             start_row+=len(df)+11
