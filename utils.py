@@ -26,7 +26,7 @@ import joblib
 import calendar
 from termcolor import colored
 import config
-
+import xlwings as xw
 
 
 def get_chromedriver(chromedriver_path=None):
@@ -485,7 +485,12 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
         df_email=pd.concat([df_email, pd.DataFrame({'Docente': [pres, procl, segr], 'Ruolo': ['Presidente', 'Proclamatore', 'Segretario']})])
 
         if final_version:
-            file_name_final=os.path.join('Sedute', main_name+' '+procl.split(' ')[0]+'.xlsx')
+            append_sheet=False
+            file_name_final=os.path.join('Sedute', main_name+' '+procl.split(' ')[0]+'.xlsx')  # Seduta date + Proclamatore
+            if os.path.exists(file_name_final):   # if Proclamatore already has a seduta, append to file
+                append_sheet=True
+                file_name_final_existing=file_name_final
+                file_name_final=file_name_final.replace('.xlsx', '_append.xlsx')  # will be deleted after moving the sheet
             writer=pd.ExcelWriter(file_name_final, engine='xlsxwriter')
             df_read=pd.read_excel(os.path.join('Sedute', main_name+'.xlsx'), sheet_name=sheet_name)
 
@@ -579,8 +584,8 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
                     else:    
                         worksheet.write(start_row+5+row_num+1, 1 + col_num, value, border_format)
             # add formula for Totale and Lode     https://xlsxwriter.readthedocs.io/working_with_formulas.html
-            row_111 = np.where(df['Totale'] == 111)[0].tolist()
             if not final_version:
+                row_111 = np.where(df['Totale'] == 111)[0].tolist()
                 for ind in range(len(df)):
                     row_num=str(start_row+5+ind+2)
                     if ind in row_111:
@@ -595,7 +600,22 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
             df_email=pd.concat([df_email, df_t])
         if final_version:
             writer.close()
-            print('File saved in', file_name_final)
+            
+            if append_sheet:   # move sheet to existing file and delete current one
+                
+                app = xw.App(visible=False)
+                source_wb = xw.Book(file_name_final)
+                target_wb = xw.Book(file_name_final_existing)
+                sheet_to_copy = source_wb.sheets[sheet_name]
+                sheet_to_copy.api.Copy(After=target_wb.sheets[-1].api)  # Copy after the last sheet in the target workbook
+                target_wb.save(file_name_final_existing)
+                source_wb.close()
+                target_wb.close()
+                app.quit()
+                os.remove(file_name_final)                
+                file_name_final=file_name_final_existing
+            
+            print(f'Seduta "{sheet_name}" saved in "{file_name_final}"')
 
     if final_version:
         print('\n\n- Available sessions:\n')
@@ -787,7 +807,7 @@ def upload_voti(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, upload_single_s
         df_comm_sed['Data']=sed
         df_commissione_presenze=pd.concat([df_commissione_presenze, df_comm_sed])
 
-    # read and match final votes
+    # read and match final grades
     df_t=pd.DataFrame()
     df_t['NOME']=''
     df_t['COGNOME']=''
