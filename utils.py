@@ -416,7 +416,7 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
     return df_studenti, all_drivers
 
 
-def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA_YEAR, final_version):
+def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA_YEAR, PROCLAMATORE_REF, final_version):
 
     QUERY_REQUIRED_COLUMNS = ['NOME', 'COGNOME', 'MATRICOLA', 'PUNTI_TOTALI', 'AA_IMM_SU']
     
@@ -480,7 +480,7 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
         sheet_name=day_week[:3].capitalize()+' '+sed.split('/')[0]+' '+sed.split('ore ')[1].replace(':', '.')
         df_commissione=pd.read_csv(df_studenti_sed['file_commissione'].iloc[0], sep=';')
         pres=df_commissione[df_commissione['Ruolo']=='Presidente']['Docente'].values[0]
-        procl=df_commissione[df_commissione['Ruolo']=='Membro Effettivo']['Docente'].values[0]
+        procl=df_commissione[df_commissione['Ruolo']==PROCLAMATORE_REF]['Docente'].values[0]
         segr=df_commissione[df_commissione['Ruolo']=='Segretario']['Docente'].values[0]
         df_email=pd.concat([df_email, pd.DataFrame({'Docente': [pres, procl, segr], 'Ruolo': ['Presidente', 'Proclamatore', 'Segretario']})])
 
