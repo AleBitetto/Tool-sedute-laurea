@@ -638,7 +638,7 @@ def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
 
     for i, row in df_studenti_sed.iterrows():
 
-        print(f"  -Uploading student {i+1}/{len(df_studenti_sed)}", end = "\r")
+        print(f"- Uploading student {i+1}/{len(df_studenti_sed)}", end = "\r")
 
         link=ROOT_URL+row['link']
         driver.execute_script(f"window.open('{link}')")
@@ -706,7 +706,7 @@ def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
                 if current_range_max == tot_elem:    # no more pages
                     break
                 else:
-                    button_path='/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/form/div[3]/div/div[5]/div/table/tbody/tr/td[2]/table/tbody/tr/td[6]'
+                    button_path='//td[@role="button" and @title="Next Page"]'    # next page
                     if driver.find_elements(By.XPATH, button_path):
                         driver.find_element(By.XPATH, button_path).click()
                         time.sleep(1)
@@ -744,7 +744,8 @@ def check_voti(driver, df_studenti_sed):
 
     if "footable-page-link" not in driver.page_source:     # single page
         final_grade=wait.until(
-                EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")))
+#                 EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")))
+            EC.presence_of_element_located((By.ID, "elencoLaureandi")))
         final_grade=convert(BeautifulSoup(final_grade.get_attribute('outerHTML'), 'html.parser'))
         elem_list=final_grade['table'][0]['tbody'][0]['tr']
     else:                                                  # multiple pages
@@ -757,14 +758,13 @@ def check_voti(driver, df_studenti_sed):
         for i in range(num_pages):
 
             time.sleep(1)
-    #         final_grade=wait.until(
-    #             EC.presence_of_element_located((By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")))
-            final_grade=driver.find_element(By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")
+#             final_grade=driver.find_element(By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]")
+            final_grade=driver.find_element(By.ID, "elencoLaureandi")
             final_grade=convert(BeautifulSoup(final_grade.get_attribute('outerHTML'), 'html.parser'))
             elem_list.extend(final_grade['table'][0]['tbody'][0]['tr'])
 
             if i < (num_pages-1):
-                driver.find_element(By.XPATH, "/html/body/div[2]/div/div/main/div[3]/div/div/div[2]/table[2]/tfoot/tr/td/div/ul/li[5]/a").click()
+                driver.find_element(By.CSS_SELECTOR, 'li[data-page="next"] a').click()    # next page
                 time.sleep(2)
 
         print(f'- Found {len(elem_list)} students')
@@ -868,7 +868,8 @@ def upload_voti(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, upload_single_s
         print('\n\n#####################################')
         print('\nFilling voti for: ', sed, '\n')
         df_studenti_sed=df_studenti[df_studenti['Data'] == sed].copy()
-        df_commissione_presenze_sed=df_commissione_presenze[df_commissione_presenze['Data'] == row['Data']]
+        df_studenti_sed=df_studenti_sed.reset_index(drop=True)
+        df_commissione_presenze_sed=df_commissione_presenze[df_commissione_presenze['Data'] == sed]
 
         # set up page
         driver_dict[sed], _ = get_seduta(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI)
