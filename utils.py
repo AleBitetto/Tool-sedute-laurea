@@ -647,11 +647,15 @@ def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
 
         # input punti tesi
         try:
-            punti_tesi=wait.until(
-                            EC.presence_of_element_located((By.ID, 'grad-dettLau-puntiTesi')))
-            punti_tesi.click()
-            punti_tesi.clear()
-            punti_tesi.send_keys(row['Punti tesi'])
+            punti_tesi=wait.until(EC.presence_of_element_located((By.ID, 'grad-dettLau-puntiTesi')))
+            if punti_tesi.get_attribute("value") == '': # check if punti_tesi is already present
+                punti_tesi.click()
+                punti_tesi.clear()
+                punti_tesi.send_keys(row['Punti tesi'])
+            else:
+                punti_tesi.clear()
+                punti_tesi=wait.until(EC.presence_of_element_located((By.ID, 'grad-dettLau-puntiTesi')))
+                punti_tesi.send_keys(row['Punti tesi'])
             wait.until(EC.presence_of_element_located((By.ID, 'grad-dettLau-annotazioni'))).click()
         except:
             print(colored(f'\n## Error for punti tesi {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
@@ -661,14 +665,16 @@ def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
             try:
                 lode=wait.until(
                         EC.presence_of_element_located((By.ID, 'grad-dettLau-lode1')))
-                lode.click()
+                if not lode.is_selected():
+                    lode.click()
             except:
                 print(colored(f'\n## Error for Lode {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
         if row['Encomio'] != '':
             try:
                 encomio=wait.until(
                         EC.presence_of_element_located((By.ID, 'grad-dettLau-encomio1')))
-                encomio.click()
+                if not encomio.is_selected():
+                    encomio.click()
             except:
                 print(colored(f'\n## Error for Encomio {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
 
@@ -683,21 +689,19 @@ def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
             s1=ss[ind:(ind+40)].split('\n')[0]
             tot_elem=s1.split(' di ')[1]
             stop=False
-            tot_checked=0
+            check_list = {x: '' for x in names_list}            
             while True:
                 # find names and check
-                table_checkbox=driver.find_elements(By.CSS_SELECTOR, "table[id^='gradDettLauCommissione'] td:nth-of-type(2)")
-                for i, item in enumerate(table_checkbox):
-                    tt=convert(BeautifulSoup(item.get_attribute('outerHTML'), 'html.parser'))
-                    for name_present in names_list:
-                        if name_present in tt['td'][0]['#text']:
-                            prev_sibl=item.find_element(By.XPATH, "preceding-sibling::*[1]")
-                            t1=convert(BeautifulSoup(prev_sibl.get_attribute('outerHTML'), 'html.parser'))
-                            if t1['td'][0]['@class'] == ['td_cbox']:
-                                prev_sibl.click()
-                                tot_checked+=1
-                            else:
-                                print(f'Missing checkbox for {name_present} for {row["NOME"]} {row["COGNOME"]}')
+                table_checkbox = driver.find_element(By.XPATH, "//table[starts-with(@id, 'gradDettLauCommissione')]/tbody")
+                tab_rows = table_checkbox.find_elements(By.TAG_NAME, "tr")
+                for tab_row in tab_rows:
+                    docente_column = tab_row.find_elements(By.TAG_NAME, "td")[1]
+                    docente_name = docente_column.text.strip()
+                    if docente_name in names_list:
+                        checkbox = tab_row.find_element(By.TAG_NAME, "input")        
+                        if not checkbox.is_selected(): # Check if the checkbox is already selected
+                            checkbox.click()
+                        check_list[docente_name] = 'OK'
                 # check next page
                 ss=BeautifulSoup(driver.page_source, 'html.parser').prettify()
                 ind=ss.find('Visualizzati')
@@ -711,8 +715,11 @@ def fill_voti(driver, df_studenti_sed, df_commissione_presenze_sed, ROOT_URL):
                         driver.find_element(By.XPATH, button_path).click()
                         time.sleep(1)
 
-            if len(names_list) != tot_checked:
+            missing_check = [x for x, v in check_list.items() if v != 'OK']
+            if len(missing_check) > 0:
                 print(colored(f'\n## Error for checkbox Commissione {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
+                print(f'  - Missing checkbox for student: {row["NOME"]} {row["COGNOME"]} for commisione:\n     ',
+                      '\n      '.join(missing_check))
         except:
             print(colored(f'\n## Error for checkbox Commissione {row["Nome"]} ({i+1})', 'black', 'on_yellow'))
 
@@ -783,6 +790,8 @@ def check_voti(driver, df_studenti_sed):
             print(f'\n## Expected Votazione Finale mismatch: {name} ({i+1})')
 
     print('\nVotazione Finale: Check Done')
+    
+    return driver
     
     
 def upload_voti(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, upload_single_session=[]):
@@ -878,7 +887,7 @@ def upload_voti(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, upload_single_s
         driver_dict[sed] = fill_voti(driver_dict[sed], df_studenti_sed, df_commissione_presenze_sed, ROOT_URL)
 
         # check final grade mismatch
-        check_voti(driver_dict[sed], df_studenti_sed)
+        driver_dict[sed] = check_voti(driver_dict[sed], df_studenti_sed)
 
 
 def get_emails(ROOT_URL):
