@@ -27,6 +27,8 @@ import calendar
 from termcolor import colored
 import config
 import xlwings as xw
+import textwrap
+from IPython.display import display, HTML
 
 
 def get_chromedriver(chromedriver_path=None):
@@ -158,7 +160,13 @@ def login_and_profilo(driver, login_as='DOCENTE'):
 #             EC.presence_of_element_located((By.XPATH, '/html/body/div[4]/div/div[1]/div/div[2]/button[2]')))
         cookie.click()
     except:
-        print(colored('\n## Error for cookies', 'black', 'on_yellow'))
+        try:
+            cookie=wait.until(            
+                EC.presence_of_element_located((By.XPATH, "//button[text()='Accetta tutti']")))
+    #             EC.presence_of_element_located((By.XPATH, '/html/body/div[4]/div/div[1]/div/div[2]/button[2]')))
+            cookie.click()
+        except:
+            print(colored('\n## Error for cookies', 'black', 'on_yellow'))
     # select Docente
     try:
         time.sleep(2)
@@ -166,7 +174,8 @@ def login_and_profilo(driver, login_as='DOCENTE'):
             EC.presence_of_element_located((By.XPATH, f"//a[contains(text(),'Accedi come {login_as}')]")))
         docente.click()
     except:
-        print(colored('\n## Error for Docente', 'black', 'on_yellow'))
+#         print(colored('\n## Error for Accedi come: Docente - maybe just skipped', 'black', 'on_yellow'))
+        pass
         
         
 def get_seduta(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI):
@@ -227,7 +236,8 @@ def get_seduta(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI):
                         if 'a' in td.keys():
                             link_list.append(ROOT_URL + td['a'][0]['@href'])
     #                         driver.get(ROOT_URL + link)
-
+        print(f'- Found {len(link_list)} sedute')
+        
     except:
         print(colored('\n## Error for seduta', 'black', 'on_yellow'))
         raise
@@ -338,7 +348,7 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
         driver.switch_to.window(driver.window_handles[start_tab_handle-1])
         for i, st in enumerate(stud_list):
 
-            print(f"Reading student {i+1}/{len(stud_list)}", end = "\r")
+            print(f"     Reading student {i+1}/{len(stud_list)}", end = "\r")
 
             link=st['td'][10]['a'][0]['@href']
             driver.execute_script(f"window.open('{link}')")
@@ -354,6 +364,22 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
             for el in iscrizione['table'][0]['tbody'][0]['tr']:
                 anno_iscrizione.append(el['#text'])
 
+            # get atti            
+            atti=wait.until(
+                EC.presence_of_element_located((By.ID, "grad-dettLau-atti")))
+            atti=convert(BeautifulSoup(atti.get_attribute('outerHTML'), 'html.parser'))
+            text_atti = []
+            try:
+                tot_atti = len(atti['table'][0]['tbody'][0]['tr'])
+                try:
+                    for el in atti['table'][0]['tbody'][0]['tr']:
+                        text_atti.append(el['td'][-1]['#text'])
+                except:
+                    nn = st['td'][0]['#text']
+                    print(colored(f'\n\n\n## Error for studente {i+1}: {nn}', 'black', 'on_yellow'))
+            except:
+                tot_atti = 0            
+                
             # get punti tesi
             media=wait.until(
                 EC.presence_of_element_located((By.ID, "grad-dettLau-tesi")))
@@ -384,6 +410,8 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
                                              'Titolo tesi': st['td'][4]['#text'],
                                              'Relatore': st['td'][5]['#text'],
                                              'Anno iscrizione': '\n'.join(anno_iscrizione),
+                                             'Atti': tot_atti,
+                                             'Testo Atti': [text_atti],
                                              'Crediti': crediti,
                                              'Crediti per tesi': crediti_tesi,
                                              'Media pesata': media_pesata.replace(' - ', '\n'),
@@ -398,6 +426,7 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
             move_col = df_studenti_t.pop('link')
             df_studenti_t.insert(df_studenti_t.shape[1], 'link', move_col)
             time.sleep(0.5)
+        print('\n')
         df_studenti_t.insert(0, 'Luogo', luogo)
         df_studenti_t.insert(0, 'Data', data_ora)
         df_studenti_t['link_seduta']=link_seduta
@@ -416,7 +445,7 @@ def get_studenti(driver, link_list, MAPPING_CORSO, GRADUATION_DATE):
     return df_studenti, all_drivers
 
 
-def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA_YEAR, PROCLAMATORE_REF, final_version):
+def export_triennali(df_studenti, ROOT_URL, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA_YEAR, PROCLAMATORE_REF, final_version):
 
     QUERY_REQUIRED_COLUMNS = ['NOME', 'COGNOME', 'MATRICOLA', 'PUNTI_TOTALI', 'AA_IMM_SU']
     
@@ -443,20 +472,49 @@ def export_triennali(df_studenti, QUERY_TRIENNALI, GRADUATION_DATE, TEMPESTIVITA
             display(cc)
         # check anno immatricolazione
         df_studenti['check anno iscrizione']=df_studenti['Anno iscrizione'].apply(lambda x: int(x.split('\n')[0].split(' ')[1][:4]))==df_studenti['AA_IMM_SU']
-        cc=df_studenti[df_studenti['check anno iscrizione'] == False]
-        if len(cc) > 0:
-            print(colored(f'#### found {len(cc)} rows with mismatch between "AA_IMM_SU" and "Anno iscrizione"', 'black', 'on_yellow'),
-                 '   ->  Keeping information from Esse3')
-            for count, row in cc.reset_index(drop=True).iterrows():
+        df_studenti['check primo anno']=df_studenti['Anno iscrizione'].apply(lambda x: int(x.split('\n')[0].split(' ')[0])) == 1
+        cc_st=df_studenti[(df_studenti['check anno iscrizione'] == False) | (df_studenti['check primo anno'] == False)]
+        if len(cc_st) > 0:
+            print(colored(f'#### found {len(cc_st)} rows with mismatch between "AA_IMM_SU" and "Anno iscrizione"', 'black', 'on_yellow'),
+                 '   ->  Keeping information from Esse3\n')
+            for count, row in cc_st.reset_index(drop=True).iterrows():
                 print(count+1, '-', row['Nome'],' (Matricola', row['Matricola']+') - Corso:',row['Corso'])
                 print('   AA_IMM_SU:', row['AA_IMM_SU'])
-                print('   Da esse3:', '\n      '+row['Anno iscrizione'].replace('\n', '\n      '), end='\n\n')
+                mess = row['Anno iscrizione']
+                first_year = row['Anno iscrizione'].split('\n')[0].split(' ')[0]
+                if int(first_year) != 1:
+                    tt = row['Anno iscrizione'].split('\n')
+                    tt[0] += '     ' + colored('#### first year different from 1', 'black', 'on_yellow')
+                    mess = '\n'.join(tt)
+                print('   Da esse3:', '\n      '+mess.replace('\n', '\n      '), end='')
+                if row['Atti'] > 0:
+                    print('\n   * Also with Atti:', row['Atti'])
+                    tt = ['\n '+chr(ord('@')+ii+1)+' - '+x.replace('\n', ' ') for ii, x in enumerate(row['Testo Atti'])]
+                    for el in tt:
+                        print(textwrap.fill(el, width=120, initial_indent=' ' * 4, subsequent_indent=' ' * 10))
+                url = ROOT_URL+row['link']
+                spaces = "&nbsp;" * 12
+                display(HTML(f'{spaces}<a href="{url}" target="_blank">Click here to open esse3</a>'))
         df_studenti['AA_IMM_SU_ESSE3']=df_studenti['Anno iscrizione'].apply(lambda x: int(x.split('\n')[0].split(' ')[1][:4]))
         check_range = [2000, 2030]
         if df_studenti['AA_IMM_SU_ESSE3'].unique().max() > check_range[1] or df_studenti['AA_IMM_SU_ESSE3'].unique().min() < check_range[0]:
             print(colored(f'#### Check "AA_IMM:SU_ESSE33", values outside range {check_range[0]}-{check_range[1]}', 'black', 'on_yellow'))
             display(df_studenti[(df_studenti['AA_IMM_SU_ESSE3'] < check_range[0]) | (df_studenti['AA_IMM_SU_ESSE3'] > check_range[1])]['AA_IMM_SU_ESSE3'].value_counts().to_frame())
-            raise        
+            raise
+        # check atti
+        cc_at=df_studenti[df_studenti['Atti'] > 0]
+        cc_at=cc_at[~cc_at['Matricola'].isin(cc_st['Matricola'])]
+        if len(cc_at) > 0:
+            print(colored(f'\n\n\n#### found {len(cc_at)} rows with "Atti"', 'black', 'on_yellow'), '\n')
+            for count, row in cc_at.reset_index(drop=True).iterrows():
+                print(count+1, '-', row['Nome'],' (Matricola', row['Matricola']+') - Corso:',row['Corso'])
+                print('   Totale Atti:', row['Atti'])
+                tt = ['\n '+chr(ord('@')+ii+1)+' - '+x.replace('\n', ' ')[:310]+('...' if len(x)>310 else '') for ii, x in enumerate(row['Testo Atti'])]
+                for el in tt:
+                    print(textwrap.fill(el, width=120, initial_indent=' ' * 4, subsequent_indent=' ' * 10))
+                url = ROOT_URL+row['link']
+                spaces = "&nbsp;" * 20
+                display(HTML(f'{spaces}<a href="{url}" target="_blank">Click here to open esse3</a>'))
         # add tempestività
         df_studenti['Tempestività']=np.where(df_studenti['AA_IMM_SU_ESSE3'] >= int(TEMPESTIVITA_YEAR[:4]), 'Yes', 'No')
         display(df_studenti.groupby('Tempestività').size().to_frame())
