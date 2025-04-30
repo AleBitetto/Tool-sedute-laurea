@@ -178,7 +178,7 @@ def login_and_profilo(driver, login_as='DOCENTE'):
         pass
         
         
-def get_seduta(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI):
+def get_seduta(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, upload = False):
     
     if len(GRADUATION_DATE) == 1:
         GRADUATION_DATE=GRADUATION_DATE[0]    # when TRIENNALI=False
@@ -236,7 +236,8 @@ def get_seduta(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI):
                         if 'a' in td.keys():
                             link_list.append(ROOT_URL + td['a'][0]['@href'])
     #                         driver.get(ROOT_URL + link)
-        print(f'- Found {len(link_list)} sedute')
+        if not upload:
+            print(f'- Found {len(link_list)} sedute')
         
     except:
         print(colored('\n## Error for seduta', 'black', 'on_yellow'))
@@ -540,7 +541,10 @@ def export_triennali(df_studenti, ROOT_URL, QUERY_TRIENNALI, GRADUATION_DATE, TE
         pres=df_commissione[df_commissione['Ruolo']=='Presidente']['Docente'].values[0]
         procl=df_commissione[df_commissione['Ruolo']==PROCLAMATORE_REF]['Docente'].values[0]
         segr=df_commissione[df_commissione['Ruolo']=='Segretario']['Docente'].values[0]
-        df_email=pd.concat([df_email, pd.DataFrame({'Docente': [pres, procl, segr], 'Ruolo': ['Presidente', 'Proclamatore', 'Segretario']})])
+#         df_email=pd.concat([df_email, pd.DataFrame({'Docente': [pres, procl, segr], 'Ruolo': ['Presidente', 'Proclamatore', 'Segretario']})])
+        df_email=pd.concat([df_email,
+                            pd.DataFrame({'Docente': [pres, procl, segr], 'Ruolo': ['Presidente', 'Proclamatore', 'Segretario']}),
+                            df_commissione[df_commissione['Ruolo'] == 'Supplente'][['Docente', 'Ruolo']]])
 
         if final_version:
             append_sheet=False
@@ -682,7 +686,10 @@ def export_triennali(df_studenti, ROOT_URL, QUERY_TRIENNALI, GRADUATION_DATE, TE
         writer.close()
         df_email_list=pd.concat([pd.read_csv(os.path.join('Checkpoints', 'lista_email_docenti.csv'), sep=';'),
                                  pd.read_csv(os.path.join('Checkpoints', 'lista_email_docenti_aggiuntivi_MANUAL.csv'), sep=';')])
-        df_email=df_email.drop_duplicates().sort_values(by=['Ruolo', 'Docente'])
+#         df_email=df_email.drop_duplicates().sort_values(by=['Ruolo', 'Docente'])
+        df_email=df_email.drop_duplicates().groupby('Docente')['Ruolo'].agg(lambda x: '-'.join(x.astype(str))).reset_index()
+        df_email['order'] = (df_email['Ruolo'] != 'Supplente').astype(int)
+        df_email=df_email.sort_values(by=['order', 'Docente'], ascending=[False, True]).drop(columns=['order'])
         df_email=df_email.merge(df_email_list[['Docente', 'Email']], on='Docente', how='left')
         df_email.to_csv(os.path.join('Sedute', main_name+'_email.csv'), index=False, sep=';')
         print('\nFile saved in', file_name)
@@ -939,7 +946,7 @@ def upload_voti(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, upload_single_s
         df_commissione_presenze_sed=df_commissione_presenze[df_commissione_presenze['Data'] == sed]
 
         # set up page
-        driver_dict[sed], _ = get_seduta(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI)
+        driver_dict[sed], _ = get_seduta(GRADUATION_DATE, ESSE3_URL, ROOT_URL, TRIENNALI, upload = True)
 
         # fill final grade
         driver_dict[sed] = fill_voti(driver_dict[sed], df_studenti_sed, df_commissione_presenze_sed, ROOT_URL)
